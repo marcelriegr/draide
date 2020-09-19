@@ -1,0 +1,126 @@
+package imgtools
+
+import (
+	"context"
+	"fmt"
+	"github.com/containers/buildah"
+	is "github.com/containers/image/v5/storage"
+	"github.com/containers/image/v5/types"
+	"github.com/containers/storage/pkg/unshare"
+	"os"
+)
+
+func Build() {
+	fmt.Println("BUILDING...")
+
+	if buildah.InitReexec() {
+		return
+	}
+	unshare.MaybeReexecUsingUserNamespace(false)
+
+	buildStoreOptions, err := storage.DefaultStoreOptions(unshare.IsRootless(), unshare.GetRootlessUID())
+	if err != nil {
+		panic(err)
+	}
+
+	buildStore, err := storage.GetStore(buildStoreOptions)
+	if err != nil {
+		panic(err)
+	}
+
+	args := make(map[string]string)
+	dockerfile := "./Dockerfile"
+	var contextDir
+	contextDir, err = os.Getwd()
+	if err != nil {
+		return errors.Wrapf(err, "unable to choose current working directory as build context")
+	}
+	contextDir, err = filepath.EvalSymlinks(contextDir)
+	if err != nil {
+		return errors.Wrapf(err, "error evaluating symlinks in build context path")
+	}
+
+	options := imagebuildah.BuildOptions{
+		// AddCapabilities:         iopts.CapAdd,
+		// AdditionalTags:          tags,
+		// Annotations:             iopts.Annotation,
+		// Architecture:            arch,
+		Args: args,
+		// BlobDirectory:           iopts.BlobCache,
+		// CNIConfigDir:            iopts.CNIConfigDir,
+		// CNIPluginPath:           iopts.CNIPlugInPath,
+		// CommonBuildOpts:         commonOpts,
+		// Compression:             compression,
+		// ConfigureNetwork:        networkPolicy,
+		ContextDirectory: contextDir,
+		// DefaultMountsFilePath:   defaultsMountFile,
+		// Devices:                 iopts.Devices,
+		// DropCapabilities:        iopts.CapDrop,
+		Err: os.Stderr,
+		// ForceRmIntermediateCtrs: iopts.ForceRm,
+		// IDMappingOptions:        idmappingOptions,
+		// IIDFile:                 iopts.Iidfile,
+		In: os.Stdin,
+		// Isolation:               isolation,
+		// Labels:                  iopts.Label,
+		// Layers:                  layers,
+		// MaxPullPushRetries:      maxPullPushRetries,
+		// NamespaceOptions:        namespaceOptions,
+		// NoCache:                 iopts.NoCache,
+		// OS:                      imageOS,
+		Out: os.Stdout,
+		// Output:                  output,
+		// OutputFormat:            format,
+		// PullPolicy:              pullPolicy,
+		// PullPushRetryDelay:      pullPushRetryDelay,
+		// Quiet:                   iopts.Quiet,
+		// RemoveIntermediateCtrs:  iopts.Rm,
+		// ReportWriter:            reporter,
+		// Runtime:                 iopts.Runtime,
+		// RuntimeArgs:             runtimeFlags,
+		// SignBy:                  iopts.SignBy,
+		// SignaturePolicyPath:     iopts.SignaturePolicy,
+		// Squash:                  iopts.Squash,
+		// SystemContext:           systemContext,
+		// Target:                  iopts.Target,
+		// TransientMounts:         iopts.Volumes,
+		// OciDecryptConfig:        decConfig,
+		// Jobs:                    &iopts.Jobs,
+		// LogRusage:               iopts.LogRusage,
+	}
+
+	a, _, err := imagebuildah.BuildDockerfiles(context.TODO(), buildStore, options, dockerfile)
+	fmt.Println("DONE! %v", a)
+	return a, err
+
+	// opts := imagebuildah.BuilderOptions{
+	// 	Isolation:        buildah.IsolationChroot,
+	// 	CommonBuildOpts:  &buildah.CommonBuildOptions{},
+	// 	ConfigureNetwork: buildah.NetworkDefault,
+	// 	SystemContext: 	  &types.SystemContext {},
+	// }
+
+	// builder, err := buildah.NewBuilder(context.TODO(), buildStore, opts)
+
+	// if err != nil {
+	// 	panic(err)
+	// }
+
+	// err = builder.Add("/home/node/", false, buildah.AddAndCopyOptions{}, "script.js")
+
+	// if err != nil {
+	// 	panic(err)
+	// }
+
+	// builder.SetCmd([]string{"node", "/home/node/script.js"})
+
+	// imageRef, err := is.Transport.ParseStoreReference(buildStore, "docker.io/myusername/my-image")
+
+	// if err != nil {
+	// 	panic(err)
+	// }
+
+	// imageId, _, _, err := builder.Commit(context.TODO(), imageRef, buildah.CommitOptions{})
+
+	// fmt.Printf("Image built! %s\n", imageId)
+}
