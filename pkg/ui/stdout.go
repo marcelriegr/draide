@@ -8,9 +8,14 @@ import (
 	"github.com/spf13/viper"
 )
 
+// IsVerbose returns current verbosity configuration
+func IsVerbose() bool {
+	return viper.GetBool("verbose")
+}
+
 // Logf tbd
 func Logf(format string, args ...interface{}) {
-	if viper.GetBool("verbose") {
+	if IsVerbose() {
 		fmt.Printf(format, args...)
 	}
 }

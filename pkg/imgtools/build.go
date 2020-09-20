@@ -1,10 +1,16 @@
 package imgtools
 
 import (
-	"bytes"
+	"context"
+	"os"
 
-	docker "github.com/fsouza/go-dockerclient"
 	"github.com/marcelriegr/draide/pkg/ui"
+
+	"github.com/docker/docker/pkg/archive"
+	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/docker/docker/pkg/term"
+	"github.com/docker/engine-api/client"
+	"github.com/docker/engine-api/types"
 )
 
 // BuildOptions tbd
@@ -18,57 +24,38 @@ type BuildOptions struct {
 
 // Build a docker image
 func Build(imageName string, contextDir string, opts BuildOptions) {
-	client, err := docker.NewClientFromEnv()
+	cli, err := client.NewEnvClient()
 	if err != nil {
 		ui.Log(err.Error())
 		ui.ErrorAndExit(1, "Failed establishing connection to Docker engine")
 	}
 
-	var buildArgs []docker.BuildArg
-	if len(opts.BuildArgs) > 0 {
-		buildArgs = make([]docker.BuildArg, len(opts.BuildArgs))
-		i := 0
-		for k, v := range opts.BuildArgs {
-			buildArgs[i] = docker.BuildArg{
-				Name:  k,
-				Value: v,
-			}
-			i++
-		}
-	}
-	noCache := false
-	if opts.NoCache {
-		noCache = true
+	contextDirTar, err := archive.TarWithOptions(contextDir, &archive.TarOptions{})
+	if err != nil {
+		ui.Log(err.Error())
+		ui.ErrorAndExit(1, "Failed reading context directory")
 	}
 
-	var buf bytes.Buffer
-	err = client.BuildImage(docker.BuildImageOptions{
-		Name:         imageName,
-		NoCache:      noCache,
-		ContextDir:   contextDir,
-		OutputStream: &buf,
-		Dockerfile:   opts.Dockerfile,
-		Labels:       opts.Labels,
-		BuildArgs:    buildArgs,
+	tags := make([]string, len(opts.Tags))
+	for i, tag := range opts.Tags {
+		tags[i] = imageName + ":" + tag
+	}
+
+	imageBuildResponse, err := cli.ImageBuild(context.Background(), contextDirTar, types.ImageBuildOptions{
+		Dockerfile:     opts.Dockerfile,
+		Tags:           tags,
+		BuildArgs:      opts.BuildArgs,
+		Labels:         opts.Labels,
+		NoCache:        opts.NoCache,
+		SuppressOutput: !ui.IsVerbose(),
 	})
 	if err != nil {
 		ui.Log(err.Error())
 		ui.ErrorAndExit(1, "Failed building image")
 	}
-	ui.Logf(buf.String())
+	defer imageBuildResponse.Body.Close()
+
+	termFd, isTerm := term.GetFdInfo(os.Stdout)
+	jsonmessage.DisplayJSONMessagesStream(imageBuildResponse.Body, os.Stdout, termFd, isTerm, nil)
 	ui.Success("Image built successfully")
-
-	ui.Info("Tagging image...")
-	for _, tag := range opts.Tags {
-		err = client.TagImage(imageName, docker.TagImageOptions{
-			Repo: imageName,
-			Tag:  tag,
-		})
-		if err != nil {
-			ui.Log(err.Error())
-			ui.ErrorAndExit(1, "Failed tagging image as %s:%s", imageName, tag)
-		}
-		ui.Success("Image tagged as %s:%s", imageName, tag)
-	}
-
 }
