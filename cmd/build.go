@@ -39,6 +39,11 @@ Available template variables:
 		imageName := viper.GetString("imagename")
 		dockerfile := filepath.ToSlash(parser.Template(viper.GetString("dockerfile"), contextDir))
 
+		noCache, err := cmd.Flags().GetBool("no-cache")
+		if err != nil {
+			ui.ErrorAndExit(1, err.Error())
+		}
+
 		tagsUnparsed := viper.GetStringSlice("tags")
 		tags := make([]string, len(tagsUnparsed))
 		for i, tag := range tagsUnparsed {
@@ -77,6 +82,7 @@ Available template variables:
 			ui.Log("> image name: %s", imageName)
 			ui.Log("> dockerfile: %s", dockerfile)
 			ui.Log("> context: %s", contextDir)
+			ui.Log("> no-cache: %v", noCache)
 
 			ui.Log("> labels:%s", stringTernary(len(labels) == 0, " <none>", ""))
 			for k, v := range labels {
@@ -99,6 +105,7 @@ Available template variables:
 			BuildArgs:  buildArgs,
 			Tags:       tags,
 			Labels:     labels,
+			NoCache:    noCache,
 		})
 	},
 }
@@ -109,6 +116,7 @@ func init() {
 	buildCmd.PersistentFlags().StringP("dockerfile", "f", "Dockerfile", "Path to Dockerfile. Value may contains template variable.")
 	buildCmd.PersistentFlags().StringToString("label", map[string]string{}, "Image label. Value may contains template variable.")
 	buildCmd.PersistentFlags().StringToString("build-arg", map[string]string{}, "Build argument. Value may contains template variable.")
+	buildCmd.PersistentFlags().Bool("no-cache", false, "Set build noCache option")
 }
 
 func stringTernary(condition bool, trueValue string, falseValue string) string {

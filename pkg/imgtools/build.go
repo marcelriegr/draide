@@ -13,6 +13,7 @@ type BuildOptions struct {
 	Tags       []string
 	Labels     map[string]string
 	BuildArgs  map[string]string
+	NoCache    bool
 }
 
 // Build a docker image
@@ -35,11 +36,15 @@ func Build(imageName string, contextDir string, opts BuildOptions) {
 			i++
 		}
 	}
+	noCache := false
+	if opts.NoCache {
+		noCache = true
+	}
 
 	var buf bytes.Buffer
 	err = client.BuildImage(docker.BuildImageOptions{
 		Name:         imageName,
-		NoCache:      true,
+		NoCache:      noCache,
 		ContextDir:   contextDir,
 		OutputStream: &buf,
 		Dockerfile:   opts.Dockerfile,
