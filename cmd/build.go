@@ -13,8 +13,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-var imageName string = ""
-
 var buildCmd = &cobra.Command{
 	Use:   "build CONTEXT_DIR",
 	Short: "Build an image",
@@ -28,12 +26,8 @@ Available template variables:
 `,
 	Args: cobra.ExactArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
-		viper.BindPFlag("name", cmd.PersistentFlags().Lookup("name"))
-		viper.BindPFlag("labels", cmd.PersistentFlags().Lookup("label"))
-		viper.BindPFlag("buildArgs", cmd.PersistentFlags().Lookup("build-arg"))
-		viper.BindPFlag("tags", cmd.PersistentFlags().Lookup("tag"))
-		viper.BindPFlag("labels", cmd.PersistentFlags().Lookup("label"))
 		viper.BindPFlag("dockerfile", cmd.PersistentFlags().Lookup("dockerfile"))
+		viper.BindPFlag("labels", cmd.PersistentFlags().Lookup("label"))
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		contextDir, _ := homedir.Expand(args[0])
@@ -42,11 +36,7 @@ Available template variables:
 			ui.Log(err.Error())
 			ui.ErrorAndExit(3, "Failed parsing context directory path")
 		}
-
-		if imageName == "" {
-			imageName = filepath.Base(contextDir)
-		}
-
+		imageName := viper.GetString("imagename")
 		dockerfile := filepath.ToSlash(parser.Template(viper.GetString("dockerfile"), contextDir))
 
 		tagsUnparsed := viper.GetStringSlice("tags")
@@ -61,7 +51,22 @@ Available template variables:
 			labels[k] = parser.Template(v, contextDir)
 		}
 
-		buildArgsUnparsed := viper.GetStringMapString("buildArgs")
+		buildArgsUnparsed, err := cmd.Flags().GetStringToString("build-arg")
+		if err != nil {
+			ui.ErrorAndExit(1, err.Error())
+		}
+		if len(buildArgsUnparsed) == 0 {
+			var buildArgsFromConfig []struct {
+				Key   string
+				Value string
+			}
+			// unmarshal values into an interface as a workaround to enable case-sensitive data loading from config file
+			// ref: https://github.com/spf13/viper/issues/373
+			viper.UnmarshalKey("buildArgs", &buildArgsFromConfig)
+			for _, v := range buildArgsFromConfig {
+				buildArgsUnparsed[v.Key] = v.Value
+			}
+		}
 		buildArgs := map[string]string{}
 		for k, v := range buildArgsUnparsed {
 			buildArgs[k] = parser.Template(v, contextDir)
@@ -73,26 +78,17 @@ Available template variables:
 			ui.Log("> dockerfile: %s", dockerfile)
 			ui.Log("> context: %s", contextDir)
 
-			ui.Log("> labels:")
-			if len(labels) == 0 {
-				ui.Log("   <none>")
-			}
+			ui.Log("> labels:%s", stringTernary(len(labels) == 0, " <none>", ""))
 			for k, v := range labels {
 				ui.Log("  - %s: %s", k, v)
 			}
 
-			ui.Log("> build args:")
-			if len(buildArgs) == 0 {
-				ui.Log("    <none>")
-			}
+			ui.Log("> build args:%s", stringTernary(len(buildArgs) == 0, " <none>", ""))
 			for k, v := range buildArgs {
 				ui.Log("  - %s: %s", k, v)
 			}
 
-			ui.Log("> tags:")
-			if len(tags) == 0 {
-				ui.Log("    <none>")
-			}
+			ui.Log("> tags:%s", stringTernary(len(tags) == 0, " <none>", ""))
 			for _, v := range tags {
 				ui.Log("  - %s:%s", imageName, v)
 			}
@@ -110,9 +106,14 @@ Available template variables:
 func init() {
 	rootCmd.AddCommand(buildCmd)
 
-	buildCmd.PersistentFlags().StringVarP(&imageName, "name", "n", "", "Image name. (default <directory-name>)")
 	buildCmd.PersistentFlags().StringP("dockerfile", "f", "Dockerfile", "Path to Dockerfile. Value may contains template variable.")
-	buildCmd.PersistentFlags().StringSliceP("tag", "t", []string{}, "Image tag. Value may contains template variable.")
 	buildCmd.PersistentFlags().StringToString("label", map[string]string{}, "Image label. Value may contains template variable.")
 	buildCmd.PersistentFlags().StringToString("build-arg", map[string]string{}, "Build argument. Value may contains template variable.")
+}
+
+func stringTernary(condition bool, trueValue string, falseValue string) string {
+	if condition {
+		return trueValue
+	}
+	return falseValue
 }
