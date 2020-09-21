@@ -5,6 +5,7 @@ import (
 
 	"github.com/marcelriegr/draide/internal/parser"
 	"github.com/marcelriegr/draide/pkg/imgtools"
+	"github.com/marcelriegr/draide/pkg/types"
 	"github.com/marcelriegr/draide/pkg/ui"
 
 	"github.com/mitchellh/go-homedir"
@@ -19,6 +20,7 @@ var buildCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		viper.BindPFlag("dockerfile", cmd.PersistentFlags().Lookup("dockerfile"))
+		viper.BindPFlag("nocache", cmd.PersistentFlags().Lookup("no-cache"))
 		viper.BindPFlag("labels", cmd.PersistentFlags().Lookup("label"))
 	},
 	Run: func(cmd *cobra.Command, args []string) {
@@ -31,11 +33,7 @@ var buildCmd = &cobra.Command{
 			ui.ErrorAndExit(3, "Failed parsing context directory path")
 		}
 		dockerfile := filepath.ToSlash(parser.Template(viper.GetString("dockerfile"), templateVars))
-
-		noCache, err := cmd.Flags().GetBool("no-cache")
-		if err != nil {
-			ui.ErrorAndExit(1, err.Error())
-		}
+		noCache := viper.GetBool("nocache")
 
 		push, err := cmd.Flags().GetBool("push")
 		if err != nil {
@@ -56,13 +54,16 @@ var buildCmd = &cobra.Command{
 			ui.ErrorAndExit(1, err.Error())
 		}
 		if len(buildArgTemplates) == 0 {
-			var buildArgsFromConfig []struct {
-				Key   string
-				Value string
-			}
+			var buildArgsFromConfig []types.KeyValueConfig
+
 			// unmarshal values into an interface as a workaround to enable case-sensitive data loading from config file
 			// ref: https://github.com/spf13/viper/issues/373
-			viper.UnmarshalKey("buildArgs", &buildArgsFromConfig)
+			err = viper.UnmarshalKey("buildArgs", &buildArgsFromConfig)
+			if err != nil {
+				ui.Log(err.Error())
+				ui.ErrorAndExit(1, "Failed parsing build arguments from configuration file")
+			}
+
 			for _, v := range buildArgsFromConfig {
 				buildArgTemplates[v.Key] = v.Value
 			}
@@ -96,6 +97,9 @@ var buildCmd = &cobra.Command{
 		}
 
 		ui.Info("Building image...")
+		if len(tags) == 0 {
+			ui.ErrorAndExit(1, "Abort. No valid image tag found.")
+		}
 		imgtools.Build(contextDir, imgtools.BuildOptions{
 			Dockerfile: dockerfile,
 			BuildArgs:  buildArgs,

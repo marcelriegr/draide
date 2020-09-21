@@ -34,6 +34,9 @@ var pushCmd = &cobra.Command{
 		}
 
 		ui.Info("Pushing image...")
+		if len(tags) == 0 {
+			ui.ErrorAndExit(1, "Abort. No valid image tag found.")
+		}
 		for _, repository := range tags {
 			imgtools.Push(repository, imgtools.PushOptions{
 				Auth: imgtools.AuthConfig{

@@ -6,10 +6,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/marcelriegr/draide/pkg/types"
 	"github.com/marcelriegr/draide/pkg/ui"
-	"github.com/spf13/cobra"
 
 	homedir "github.com/mitchellh/go-homedir"
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
@@ -64,6 +65,7 @@ func init() {
 
 	rootCmd.PersistentFlags().StringSliceP("tag", "t", []string{}, "Image tag. Value may contain template variable.")
 	viper.BindPFlag("tags", rootCmd.PersistentFlags().Lookup("tag"))
+	viper.SetDefault("tags", []string{"latest"})
 
 	rootCmd.PersistentFlags().StringP("registry", "r", "", "Container registry, such as: k8s.gcr.io")
 	viper.BindPFlag("registry", rootCmd.PersistentFlags().Lookup("registry"))
@@ -109,7 +111,37 @@ func initConfig() {
 			if !viper.IsSet(presetsKey) {
 				ui.ErrorAndExit(1, "Unable to find preset configuration for: %s", preset)
 			}
-			viper.MergeConfigMap(viper.Sub(presetsKey).AllSettings())
+
+			presetSettings := viper.Sub(presetsKey)
+			err = viper.MergeConfigMap(viper.Sub(presetsKey).AllSettings())
+			if err != nil {
+				ui.Log(err.Error())
+				ui.ErrorAndExit(1, "Failed parsing preset configuration")
+			}
+
+			if presetSettings.IsSet("extraBuildArgs") {
+				var buildArgs, buildArgsOfPreset []types.KeyValueConfig
+
+				// unmarshal values into an interface as a workaround to enable case-sensitive data loading from config file
+				// ref: https://github.com/spf13/viper/issues/373
+				err = viper.UnmarshalKey("buildArgs", &buildArgs)
+				if err != nil {
+					ui.Log(err.Error())
+					ui.ErrorAndExit(1, "Failed parsing build arguments from configuration file")
+				}
+				err = presetSettings.UnmarshalKey("extraBuildArgs", &buildArgsOfPreset)
+				if err != nil {
+					ui.Log(err.Error())
+					ui.ErrorAndExit(1, "Failed parsing preset's extra build arguments from configuration file")
+				}
+				viper.Set("buildArgs", append(buildArgs, buildArgsOfPreset...))
+			}
+
+			if presetSettings.IsSet("extraTags") {
+				tags := viper.GetStringSlice("tags")
+				extraTags := viper.GetStringSlice("extraTags")
+				viper.Set("tags", append(tags, extraTags...))
+			}
 		}
 	case viper.ConfigFileNotFoundError:
 		ui.Log("Proceed without configuration file")
