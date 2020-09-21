@@ -23,7 +23,7 @@ type BuildOptions struct {
 }
 
 // Build a docker image
-func Build(imageName string, contextDir string, opts BuildOptions) {
+func Build(contextDir string, opts BuildOptions) {
 	cli, err := client.NewEnvClient()
 	if err != nil {
 		ui.Log(err.Error())
@@ -36,14 +36,9 @@ func Build(imageName string, contextDir string, opts BuildOptions) {
 		ui.ErrorAndExit(1, "Failed reading context directory")
 	}
 
-	tags := make([]string, len(opts.Tags))
-	for i, tag := range opts.Tags {
-		tags[i] = imageName + ":" + tag
-	}
-
-	imageBuildResponse, err := cli.ImageBuild(context.Background(), contextDirTar, types.ImageBuildOptions{
+	response, err := cli.ImageBuild(context.Background(), contextDirTar, types.ImageBuildOptions{
 		Dockerfile:     opts.Dockerfile,
-		Tags:           tags,
+		Tags:           opts.Tags,
 		BuildArgs:      opts.BuildArgs,
 		Labels:         opts.Labels,
 		NoCache:        opts.NoCache,
@@ -53,9 +48,8 @@ func Build(imageName string, contextDir string, opts BuildOptions) {
 		ui.Log(err.Error())
 		ui.ErrorAndExit(1, "Failed building image")
 	}
-	defer imageBuildResponse.Body.Close()
+	defer response.Body.Close()
 
 	termFd, isTerm := term.GetFdInfo(os.Stdout)
-	jsonmessage.DisplayJSONMessagesStream(imageBuildResponse.Body, os.Stdout, termFd, isTerm, nil)
-	ui.Success("Image built successfully")
+	jsonmessage.DisplayJSONMessagesStream(response.Body, os.Stdout, termFd, isTerm, nil)
 }

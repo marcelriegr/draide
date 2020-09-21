@@ -2,46 +2,72 @@ package parser
 
 import (
 	"io"
-	"log"
-	"os"
 
 	"github.com/marcelriegr/draide/pkg/gittools"
 	"github.com/marcelriegr/draide/pkg/ui"
+
+	"github.com/spf13/viper"
 	"github.com/valyala/fasttemplate"
 )
 
-// Template tbd
-func Template(str string, contextDir string) string {
-	// Get git repo information
-	repoDetails, _ := gittools.GetRepoDetails(contextDir)
+// TemplateVars tbd
+type TemplateVars map[string]string
 
-	// Parse environment variables
-	str = Env(str)
+// GenerateTemplateVarsOptions tbd
+type GenerateTemplateVarsOptions struct {
+	contextDir string
+}
 
-	// Parse template variables
-	t, err := fasttemplate.NewTemplate(str, "%", "%")
-	if err != nil {
-		log.Fatalf("unexpected error when parsing template: %s", err)
+// GenerateTemplateVars tbd
+func GenerateTemplateVars(opts GenerateTemplateVarsOptions) TemplateVars {
+	vars := map[string]string{
+		"IMAGE_NAME": viper.GetString("imagename"),
+		"REGISTRY":   viper.GetString("registry"),
+		"NAMESPACE":  viper.GetString("namespace"),
 	}
 
-	return t.ExecuteFuncString(func(w io.Writer, tag string) (int, error) {
-		switch tag {
-		case "COMMIT_HASH":
-			if repoDetails == nil {
-				ui.Error("Cannot resolve %%%s%% on a non git repository", tag)
-				os.Exit(3)
-			}
-			return w.Write([]byte(repoDetails.CommitHash))
-		case "BRANCH":
-			if repoDetails == nil {
-				ui.Error("Cannot resolve %%%s%% on a non git repository", tag)
-				os.Exit(3)
-			}
-			return w.Write([]byte(repoDetails.Branch))
-		default:
-			ui.Error("Unrecognized tag template: %s", tag)
-			os.Exit(2)
-			panic(0)
+	if opts.contextDir == "" {
+		opts.contextDir = "."
+	}
+
+	repoDetails, _ := gittools.GetRepoDetails(opts.contextDir)
+	if repoDetails != nil {
+		vars["BRANCH"] = repoDetails.Branch
+		vars["COMMIT_HASH"] = repoDetails.CommitHash
+	}
+
+	return vars
+}
+
+// Template tbd
+func Template(template string, templateVars TemplateVars) string {
+	// Interpolate environment variables
+	template = Env(template)
+
+	// Parse template
+	t, err := fasttemplate.NewTemplate(template, "%", "%")
+	if err != nil {
+		ui.Log(err.Error())
+		ui.ErrorAndExit(1, "Failed parsing template %s", template)
+	}
+
+	// Interpolate template variables
+	return t.ExecuteFuncString(func(w io.Writer, templateVar string) (int, error) {
+		val, validKey := templateVars[templateVar]
+
+		if !validKey {
+			ui.ErrorAndExit(1, "Unrecognized template variable: %s", templateVar)
 		}
+
+		if val == "" {
+			switch templateVar {
+			case "BRANCH":
+			case "COMMIT_HASH":
+				ui.ErrorAndExit(1, "Cannot resolve %%%s%% on a non git repository", templateVar)
+			}
+			ui.ErrorAndExit(1, "Cannot resolve template variable %s", templateVar)
+		}
+
+		return w.Write([]byte(val))
 	})
 }

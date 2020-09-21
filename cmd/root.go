@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,7 +20,17 @@ var imageName string = ""
 var rootCmd = &cobra.Command{
 	Use:   "draide",
 	Short: "Dr Aide - Your personal Docker aide",
-	Long:  `Utility tools to build and publish Docker image`,
+	Long: `Utility tools to build and publish Docker image
+
+Available template variables:
+	$<ENV_VAR>			Environment variable
+	#<ENV_VAR>			Alias for $<ENV_VAR> as the syntax may get evaluated by the system and thus requires escaping to be passed correctly
+	%REGISTRY%			Registry (see --registry flag)
+	%NAMESPACE%			Namespace (see --namespace flag)
+	%IMAGE_NAME%			Image name (see --name flag)
+	%BRANCH%			Git branch name of current directory
+	%COMMIT_HASH%			Git commit hash of current directory
+`,
 }
 
 // Execute Cobra
@@ -36,7 +47,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Logging verbosity")
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (defaults to ./.draide.yaml or $HOME/.draide.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default ./.draide.yaml or $HOME/.draide.yaml)")
 
 	rootCmd.PersistentFlags().StringVarP(&preset, "preset", "p", "", "Use presets")
 	viper.BindPFlag("preset", rootCmd.PersistentFlags().Lookup("preset"))
@@ -51,8 +62,24 @@ func init() {
 		imageName = filepath.Base(cwd)
 	}
 
-	rootCmd.PersistentFlags().StringSliceP("tag", "t", []string{}, "Image tag. Value may contains template variable.")
+	rootCmd.PersistentFlags().StringSliceP("tag", "t", []string{}, "Image tag. Value may contain template variable.")
 	viper.BindPFlag("tags", rootCmd.PersistentFlags().Lookup("tag"))
+
+	rootCmd.PersistentFlags().StringP("registry", "r", "", "Container registry, such as: k8s.gcr.io")
+	viper.BindPFlag("registry", rootCmd.PersistentFlags().Lookup("registry"))
+
+	rootCmd.PersistentFlags().String("namespace", "", "Repository namespace")
+	viper.BindPFlag("namespace", rootCmd.PersistentFlags().Lookup("namespace"))
+
+	rootCmd.PersistentFlags().String("repository-format", "%REGISTRY%/%NAMESPACE%/%IMAGE_NAME%", "Format to construct repository name. Value may contain template variable.")
+	viper.BindPFlag("repository-format", rootCmd.PersistentFlags().Lookup("repository-format"))
+
+	rootCmd.PersistentFlags().String("username", "", "Username for pushing image into registry")
+	viper.BindPFlag("username", rootCmd.PersistentFlags().Lookup("username"))
+
+	rootCmd.PersistentFlags().String("password", "", "Password for pushing image into registry")
+	rootCmd.PersistentFlags().Bool("password-stdin", false, "Password for pushing image into registry via stdin. Password supplied via stdin will take precedence over the --password flag.")
+	viper.BindPFlag("password", rootCmd.PersistentFlags().Lookup("password"))
 }
 
 func initConfig() {
@@ -92,4 +119,46 @@ func initConfig() {
 		ui.ErrorAndExit(1, err.Error())
 	}
 
+	initCredentials()
+}
+
+func initCredentials() {
+	// read credentials from stdin
+	passwordStdIn, err := rootCmd.PersistentFlags().GetBool("password-stdin")
+	if err != nil {
+		ui.ErrorAndExit(1, err.Error())
+	}
+
+	if passwordStdIn {
+		fi, err := os.Stdin.Stat()
+		if err != nil {
+			ui.ErrorAndExit(1, err.Error())
+		} else if fi.Mode()&os.ModeNamedPipe == 0 {
+			ui.ErrorAndExit(1, "No password from stdin received")
+		}
+
+		scanner := bufio.NewScanner(bufio.NewReader(os.Stdin))
+		scanner.Scan()
+		password := scanner.Text()
+
+		if password == "" {
+			ui.ErrorAndExit(1, "Found empty string as password from stdin")
+		}
+
+		viper.Set("password", password)
+		ui.Log("Using password from stdin")
+	}
+
+	// check credentials completeness
+	username := viper.GetString("username")
+	password := viper.GetString("password")
+	if (username == "" && password != "") || (username != "" && password == "") {
+		ui.ErrorAndExit(1, "Incomplete credentials. Username and password information must be provided.")
+	}
+
+	if ui.IsVerbose() && username != "" && password != "" {
+		ui.Log("Credentials:")
+		ui.Log(" > username: %s", username)
+		ui.Log(" > password: ******")
+	}
 }

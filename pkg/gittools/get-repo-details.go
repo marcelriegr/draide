@@ -1,6 +1,9 @@
 package gittools
 
 import (
+	"github.com/marcelriegr/draide/pkg/ui"
+	"github.com/mitchellh/go-homedir"
+
 	"github.com/go-git/go-git/v5"
 )
 
@@ -12,7 +15,11 @@ type RepoDetails struct {
 
 // GetRepoDetails return repository info
 func GetRepoDetails(path string) (*RepoDetails, error) {
-	details := RepoDetails{}
+	path, err := homedir.Expand(path)
+	if err != nil {
+		ui.Log(err.Error())
+		ui.ErrorAndExit(1, "Failed parsing git repository information")
+	}
 
 	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{
 		DetectDotGit: true,
@@ -26,6 +33,7 @@ func GetRepoDetails(path string) (*RepoDetails, error) {
 		return nil, err
 	}
 
+	details := RepoDetails{}
 	details.CommitHash = headRef.Hash().String()
 	details.Branch = headRef.Name().Short()
 
